@@ -1,126 +1,168 @@
-/*
-*
-* "board" is a matrix that holds data about the
-* game board, in a form of BoardSquare objects
-*
-* openedSquares holds the position of the opened squares
-*
-* flaggedSquares holds the position of the flagged squares
-*
- */
 let board = [];
 let openedSquares = [];
 let flaggedSquares = [];
 let bombCount = 0;
 let squaresLeft = 0;
+let gameOver = false;
+let boardMetadata = { rowCount: 9, colCount: 9 }; 
 
-
-/*
-*
-* the probability of a bomb in each square
-*
- */
-let bombProbability = 3;
-let maxProbability = 15;
-
-
-function minesweeperGameBootstrapper(rowCount, colCount) {
-    let easy = {
-        'rowCount': 9,
-        'colCount': 9,
-    };
-    // TODO you can declare here the medium and expert difficulties
+let bombProbability = 0.15;
+let maxProbability = 1.0;
+function minesweeperGameBootstrapper(rowCount, colCount, bombProbability, maxProbability) {
+    let easy = { rowCount: 9, colCount: 9 };
+    let medium = { rowCount: 16, colCount: 16 };
+    let expert = { rowCount: 16, colCount: 30 };
 
     if (rowCount == null && colCount == null) {
-        // TODO have a default difficulty
+        boardMetadata = easy; 
     } else {
-        generateBoard({'rowCount': rowCount, 'colCount': colCount});
+        boardMetadata = { rowCount: rowCount, colCount: colCount };
     }
+
+    generateBoard(boardMetadata, bombProbability, maxProbability);
 }
 
-function generateBoard(boardMetadata) {
-    squaresLeft = boardMetadata.colCount * boardMetadata.rowCount;
+function generateBoard(boardMetadata, bombProbability, maxProbability) {
+    let squaresLeft = boardMetadata.colCount * boardMetadata.rowCount;
+    board = new Array(boardMetadata.colCount);
 
-    /*
-    *
-    * "generate" an empty matrix
-    *
-     */
     for (let i = 0; i < boardMetadata.colCount; i++) {
         board[i] = new Array(boardMetadata.rowCount);
     }
 
-    /*
-    *
-    * TODO fill the matrix with "BoardSquare" objects, that are in a pre-initialized state
-    *
-    */
-
-
-    /*
-    *
-    * "place" bombs according to the probabilities declared at the top of the file
-    * those could be read from a config file or env variable, but for the
-    * simplicity of the solution, I will not do that
-    *
-    */
     for (let i = 0; i < boardMetadata.colCount; i++) {
         for (let j = 0; j < boardMetadata.rowCount; j++) {
-            // TODO place the bomb, you can use the following formula: Math.random() * maxProbability < bombProbability
+            board[i][j] = {
+                hasBomb: Math.random() * maxProbability < bombProbability,
+                isOpen: false,
+                isFlagged: false,
+                neighboringBombs: 0
+            };
         }
     }
 
-    /*
-    *
-    * TODO set the state of the board, with all the squares closed
-    * and no flagged squares
-    *
-     */
+    for (let i = 0; i < boardMetadata.colCount; i++) {
+        for (let j = 0; j < boardMetadata.rowCount; j++) {
+            if (!board[i][j].hasBomb) {
+                board[i][j].neighboringBombs = countNeighboringBombs(board, i, j, boardMetadata);
+            }
+        }
+    }
 
-
-    //BELOW THERE ARE SHOWCASED TWO WAYS OF COUNTING THE VICINITY BOMBS
-
-    /*
-    *
-    * TODO count the bombs around each square
-    *
-    */
-
-    /*
-    *
-    * print the board to the console to see the result
-    *
-    */
-    console.log(board);
+    updateBoardUI(boardMetadata);
 }
 
-/*
-*
-* simple object to keep the data for each square
-* of the board
-*
-*/
-class BoardSquare {
-    constructor(hasBomb, bombsAround) {
-        this.hasBomb = hasBomb;
-        this.bombsAround = bombsAround;
+
+function countNeighboringBombs(board, x, y, boardMetadata) {
+    let bombCount = 0;
+    for (let i = -1; i <= 1; i++) {
+        for (let j = -1; j <= 1; j++) {
+            let newX = x + i;
+            let newY = y + j;
+            if (newX >= 0 && newX < boardMetadata.colCount && newY >= 0 && newY < boardMetadata.rowCount) {
+                if (board[newX][newY].hasBomb) {
+                    bombCount++;
+                }
+            }
+        }
+    }
+    return bombCount;
+}
+
+function updateBoardUI(boardMetadata) {
+    const gameBoard = document.getElementById('game-board');
+    gameBoard.innerHTML = ''; 
+
+    gameBoard.style.gridTemplateColumns = `repeat(${boardMetadata.colCount}, 40px)`;
+
+    for (let i = 0; i < boardMetadata.colCount; i++) {
+        for (let j = 0; j < boardMetadata.rowCount; j++) {
+            const tile = document.createElement('div');
+            tile.classList.add('tile');
+            tile.dataset.x = i;
+            tile.dataset.y = j;
+
+            tile.addEventListener('click', () => discoverTile(board, i, j, boardMetadata));
+
+            tile.addEventListener('contextmenu', (e) => {
+                e.preventDefault();
+                toggleFlag(board, i, j);
+            });
+
+            gameBoard.appendChild(tile); 
+        }
     }
 }
 
-class Pair {
-    constructor(x, y) {
-        this.x = x;
-        this.y = y;
+function discoverTile(board, x, y, boardMetadata) {
+    if (gameOver || board[x][y].isOpen || board[x][y].isFlagged) {
+        return; 
+    }
+
+    const tile = document.querySelector(`.tile[data-x="${x}"][data-y="${y}"]`);
+    board[x][y].isOpen = true;
+    tile.classList.add('open');
+
+    if (board[x][y].hasBomb) {
+        tile.classList.add('bomb');
+        tile.innerHTML = '💣';
+        gameOver = true;
+        console.log("Game Over! You hit a bomb.");
+        revealAllBombs(board, boardMetadata);
+        return;
+    }
+
+    tile.innerHTML = board[x][y].neighboringBombs > 0 ? board[x][y].neighboringBombs : '';
+
+    squaresLeft--;
+
+    if (squaresLeft === 0) {
+        console.log("Congratulations! You've won the game!");
+        gameOver = true;
     }
 }
 
+function toggleFlag(board, x, y) {
+    if (gameOver || board[x][y].isOpen) {
+        return;
+    }
 
-/*
-* call the function that "handles the game"
-* called at the end of the file, because if called at the start,
-* all the global variables will appear as undefined / out of scope
-*
- */
-minesweeperGameBootstrapper(5, 5);
+    const tile = document.querySelector(`.tile[data-x="${x}"][data-y="${y}"]`);
+    board[x][y].isFlagged = !board[x][y].isFlagged;
+    tile.classList.toggle('flagged');
+}
 
-// TODO create the other required functions such as 'discovering' a tile, and so on (also make sure to handle the win/loss cases)
+function revealAllBombs(board, boardMetadata) {
+    for (let i = 0; i < boardMetadata.colCount; i++) {
+        for (let j = 0; j < boardMetadata.rowCount; j++) {
+            if (board[i][j].hasBomb) {
+                const tile = document.querySelector(`.tile[data-x="${i}"][data-y="${j}"]`);
+                tile.classList.add('bomb');
+                tile.innerHTML = '💣';
+            }
+        }
+    }
+}
+
+window.onload = function() {
+    const difficultySelect = document.getElementById('difficulty-select');
+    const bombProbabilityInput = document.getElementById('bomb-probability');
+    const maxProbabilityInput = document.getElementById('max-probability');
+    const startGameButton = document.getElementById('start-game');
+
+    startGameButton.addEventListener('click', function() {
+        let selectedDifficulty = difficultySelect.value;
+        let bombProbability = parseFloat(bombProbabilityInput.value);
+        let maxProbability = parseFloat(maxProbabilityInput.value);
+
+        if (selectedDifficulty === 'easy') {
+            minesweeperGameBootstrapper(9, 9, bombProbability, maxProbability); 
+        } else if (selectedDifficulty === 'medium') {
+            minesweeperGameBootstrapper(16, 16, bombProbability+0.05, maxProbability); 
+        } else if (selectedDifficulty === 'expert') {
+            minesweeperGameBootstrapper(16, 30, bombProbability+0.1, maxProbability); 
+        }
+    });
+
+    generateBoard(boardMetadata, 0.15, 1.0); 
+};
